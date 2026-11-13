@@ -18,7 +18,9 @@ def compute_values(df: pd.DataFrame, cfg: dict) -> dict:
     # runs <-> win probability exchange rate: average WP gained per run across all scored states
     wp_per_run = float(((d["wp_if_six"] - d["wp_if_dot"]) / 6.0).mean())
     wp_per_run = max(wp_per_run, 1e-4)
-    if v.get("wicket_cost_conversion", "local") == "local":
+    if v.get("wicket_cost_conversion", "local") == "run_expectancy":
+        raw_cost = pd.Series(_run_expectancy_cost(df, d, cfg), index=d.index)
+    elif v.get("wicket_cost_conversion", "local") == "local":
         local = ((d["wp_if_six"] - d["wp_if_dot"]) / 6.0).clip(lower=wp_per_run * v.get("wp_per_run_floor_share", 0.1))
         raw_cost = d["wicket_wp_cost"] / local
     else:
@@ -102,6 +104,22 @@ def compute_values(df: pd.DataFrame, cfg: dict) -> dict:
             "mean_wicket_cost": float(d["wicket_cost_runs"].mean()),
             "mean_wicket_cost_pressure": float(d.loc[d["pressure"], "wicket_cost_runs"].mean()),
             "share_cost_capped": float((d["wicket_cost_runs"] >= v["wicket_cost_cap_runs"]).mean())}
+
+
+def _run_expectancy_cost(df_all, d, cfg):
+    """Wicket cost = E[remaining runs | balls, wickets] - E[remaining runs | balls, wickets + 1].
+
+    Fitted on first innings of all matches (chases stop early), monotone in balls and wickets.
+    """
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    t = df_all[(df_all["innings"] == 1) & df_all["state_valid"]]
+    rem = (t["inn1_total"] - t["score_before"]).to_numpy(dtype=float)
+    X = t[["balls_remaining", "wickets_before"]].to_numpy(dtype=float)
+    m = HistGradientBoostingRegressor(monotonic_cst=[1, -1], max_iter=200, learning_rate=0.06, max_depth=4,
+                                      min_samples_leaf=200, random_state=cfg["seed"]).fit(X, rem)
+    b = np.maximum(d["balls_remaining"].to_numpy(dtype=float) - 1, 0)
+    w = d["wickets_before"].to_numpy(dtype=float)
+    return np.maximum(m.predict(np.column_stack([b, w])) - m.predict(np.column_stack([b, np.minimum(w + 1, 10)])), 0)
 
 
 def player_match(rec: pd.DataFrame, flag: str = "pressure", value_col: str = "adj_value") -> pd.DataFrame:

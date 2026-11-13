@@ -4,8 +4,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .rating import fit_params, rate_arrays, rate_table
-from .value import player_match
+import copy
+
+from .rating import build_ratings, fit_params, rate_arrays, rate_table
+from .value import compute_values, player_match
 
 
 def _weights(cfg):
@@ -132,3 +134,30 @@ def run_all(ratings: dict, cfg: dict) -> dict:
                      "wpa_spearman": el["pressure_value_per_ball_shrunk"].corr(el["pressure_wpa_per_100_balls"], method="spearman")
                      if len(el) > 2 else np.nan}
     return out
+
+
+def method_comparison(dfl: pd.DataFrame, data: dict, cfg: dict, base: dict) -> pd.DataFrame:
+    """Split-half reliability under each wicket-cost conversion and each pressure prior.
+
+    The criterion is repeatability (odd vs even matches), never who ends up in the top 10.
+    """
+    rows = []
+    cur = (cfg["value"].get("wicket_cost_conversion", "local"), cfg["rating"].get("pressure_prior", "population"))
+    for conv in ["local", "global", "run_expectancy"]:
+        c = copy.deepcopy(cfg)
+        c["value"]["wicket_cost_conversion"] = conv
+        val = compute_values(dfl, c)
+        for prior in ["population", "own_baseline"]:
+            c["rating"]["pressure_prior"] = prior
+            rt = build_ratings({"bat": val["bat"].copy(), "bowl": val["bowl"].copy()}, data, c)
+            row = {"wicket_cost": conv, "pressure_prior": prior, "used": (conv, prior) == cur,
+                   "mean_wicket_cost_runs": val["mean_wicket_cost"]}
+            for role, name in [("bat", "batters"), ("bowl", "bowlers")]:
+                sh = split_half(rt[role], c)["table"].set_index("component")
+                t, b = rt[role]["table"], base[role]["table"]
+                row[f"{name}_split_half_rating"] = sh.loc["rating", "pearson_r"]
+                row[f"{name}_split_half_pressure_value"] = sh.loc["pressure_value", "pearson_r"]
+                row[f"{name}_top10_overlap_with_used"] = len(set(t[t["eligible"]].head(10)["player_id"])
+                                                             & set(b[b["eligible"]].head(10)["player_id"]))
+            rows.append(row)
+    return pd.DataFrame(rows)

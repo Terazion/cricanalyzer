@@ -86,6 +86,7 @@ def fit_params(rec: pd.DataFrame, pm: pd.DataFrame, flag: str, cfg: dict) -> dic
         prm["mu_d"] = mu_d
         prm["tau2_d_raw"] = float((q - (len(t) - 1)) / max(wt.sum() - (wt ** 2).sum() / wt.sum(), 1e-9))
         prm["tau2_d"] = float(max(prm["tau2_d_raw"], 1e-6))
+    prm["prior"] = r.get("pressure_prior", "population")
     has = pm["bp"] >= r["consistency_min_balls"]
     prm["p0"] = float((pm.loc[has, "vp"] > 0).mean()) if has.any() else 0.5
     return prm
@@ -111,12 +112,19 @@ def rate_arrays(pidx, n_players, bp, vp, bnp, vnp, w, prm, weights, elig, cmin, 
         B = np.where(N > 0, tau2 / (tau2 + sig2 / np.maximum(N, 1e-9)), 0.0)
         return m, mu + B * (m - mu), np.sqrt(B * sig2 / np.maximum(N, 1e-9))
     m_p, th_p, sd_p = shrink(Np, Vp, prm["mu_p"], prm["sig2_p"], prm["tau2_p"])
-    m_n, th_n, _ = shrink(Nn, Vn, prm["mu_np"], prm["sig2_np"], prm["tau2_np"])
+    m_n, th_n, sd_n = shrink(Nn, Vn, prm["mu_np"], prm["sig2_np"], prm["tau2_np"])
     both = (Np > 0) & (Nn > 0)
     var_d = prm["sig2_p"] / np.maximum(Np, 1e-9) + prm["sig2_np"] / np.maximum(Nn, 1e-9)
     B_d = np.where(both, prm["tau2_d"] / (prm["tau2_d"] + var_d), 0.0)
     lift_raw = np.where(both, m_p - m_n, prm["mu_d"])
     lift = prm["mu_d"] + B_d * (lift_raw - prm["mu_d"])
+    if prm.get("prior") == "own_baseline":
+        # pressure value = own shrunk baseline + shrunk pressure lift (falls back to the
+        # population prior for a player with no non-pressure balls)
+        th_own = th_n + lift
+        sd_own = np.sqrt(sd_n ** 2 + B_d * var_d)
+        th_p = np.where(Nn > 0, th_own, th_p)
+        sd_p = np.where(Nn > 0, sd_own, sd_p)
     has = (bp >= cmin).astype(float)
     pos = has * (vp > 0)
     n_has, n_pos = bc(has), bc(pos)

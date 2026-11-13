@@ -311,6 +311,12 @@ def write_report(ctx: dict, cfg: dict) -> str:
       f"{rt['bat']['n_eligible']} batters and {rt['bowl']['n_eligible']} bowlers qualify.")
     a("- **State adjustment.** Value is always relative to the expected outcome in the same state, so an opener is "
       "not compared with a finisher on raw strike rate, and a death bowler is not penalised for bowling the expensive overs.")
+    if cfg["rating"].get("pressure_prior", "population") == "own_baseline":
+        a("- **Pressure value prior.** A player's pressure value is his own shrunk non-pressure value plus a shrunk pressure lift. "
+          "All of a player's balls inform the estimate; pressure balls move it away from his overall level only as far as the "
+          "data support a pressure-specific difference. The alternative (prior = average player, pressure balls only) is compared in section 5.")
+    else:
+        a("- **Pressure value prior.** Pressure value is estimated from pressure balls only and shrunk toward the average player.")
     for role, name in [("bat", "Batters"), ("bowl", "Bowlers")]:
         p = rt[role]["prm"]
         nb = p["sig2_p"] / p["tau2_p"]
@@ -392,8 +398,17 @@ def write_report(ctx: dict, cfg: dict) -> str:
         a("")
     img("sensitivity", "Sensitivity overlap")
 
+    a("### Method comparison\n")
+    a("Split-half reliability of the rating under each wicket-cost conversion and each pressure prior. The row marked "
+      "`used` produced the rankings in this report. The criterion is repeatability, never who ends up in the top 10.\n")
+    a(md_table(ctx["method_comparison"], nd=3))
+    a("")
     a("### Limitations\n")
     lim = [
+        "**With the own-baseline prior, the pressure value is largely a player's overall value.** The data show little "
+        "repeatable pressure-specific difference between players (see lift), so the best estimate of how someone performs "
+        "under pressure leans on how he performs in general. The ranking is therefore closer to 'best players, as measured on "
+        "and off pressure balls' than to a pure clutch ranking; the population-prior rows in the method comparison show the pure version and its reliability.",
         "**Small pressure samples.** Per-ball outcomes are extremely noisy relative to true skill differences (see the "
         "shrinkage numbers in section 3). Adjacent ranks are often not statistically distinguishable; read the bootstrap "
         "rank intervals, not just the rank.",

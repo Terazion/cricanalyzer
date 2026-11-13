@@ -98,6 +98,7 @@ def main(argv=None):
     val = value.compute_values(dfl, cfg)
     print(f"WP per run: {val['wp_per_run']:.5f}; mean wicket cost {val['mean_wicket_cost']:.2f} runs "
           f"(pressure balls {val['mean_wicket_cost_pressure']:.2f}; capped on {100 * val['share_cost_capped']:.1f}% of balls)")
+    print(f"pressure prior: {cfg['rating'].get('pressure_prior', 'population')}")
     print(f"wicket cost conversion: {val['conversion']}; cost quantiles (runs): {val['cost_quantiles']}")
     print(val["diagnostics"].set_index("segment").T.round(4).to_string())
     val["diagnostics"].to_csv(os.path.join(td, "value_diagnostics.csv"), index=False)
@@ -137,10 +138,15 @@ def main(argv=None):
         R["season"].to_csv(os.path.join(td, f"season_stability_{name}.csv"), index=False)
         R["boot_top"].to_csv(os.path.join(td, f"bootstrap_top20_{name}.csv"), index=False)
 
+    mc = validate.method_comparison(dfl, data, cfg, rt)
+    mc.to_csv(os.path.join(td, "method_comparison.csv"), index=False)
+    print("\nmethod comparison (split-half r; higher = more repeatable):")
+    print(mc.round(3).to_string(index=False))
+
     # ------------------------------------------------------------ Phase 7
     banner("PHASE 7 - REPORT")
     ctx = {"meta": m, "models": mod, "evidence": ev, "thresholds": thresholds, "val": val, "ratings": rt,
-           "rel": rel, "team_names": data["team_names"]}
+           "rel": rel, "method_comparison": mc, "team_names": data["team_names"]}
     path = report.write_report(ctx, cfg)
     print(f"report: {path}; charts: {len(os.listdir(os.path.join(od, 'charts')))} PNG files")
     for role, name in [("bat", "BATTERS"), ("bowl", "BOWLERS")]:

@@ -57,6 +57,7 @@ value:
   #            runs in a tight finish as in a quiet over; pressure does not inflate it)
   #   global = divide by the average worth of a run over all states (inflates the cost on
   #            high-leverage balls, because runs are also worth more there)
+  #   run_expectancy = ignore win probability; cost = drop in expected remaining innings runs
   wicket_cost_conversion: local
   wp_per_run_floor_share: 0.1   # local run value is floored at this share of the global mean
   wicket_cost_cap_runs: 15    # cap on the run-equivalent cost of one dismissal
@@ -73,6 +74,12 @@ rating:
     pressure: 0.5
     lift: 0.25
     consistency: 0.25
+  # Prior for a player's pressure value:
+  #   own_baseline = the player's own (shrunk) non-pressure value plus a shrunk pressure lift.
+  #                  Uses all of a player's balls; pressure balls move the estimate only as far
+  #                  as the data support a real pressure-specific difference.
+  #   population   = the average player. Uses pressure balls only.
+  pressure_prior: own_baseline
   eb_min_balls_for_variance: 30
   consistency_min_balls: 3    # a match counts toward consistency with >= this many pressure balls
   consistency_prior_matches: 10
