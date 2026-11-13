@@ -52,7 +52,14 @@ pressure:
     death_reach_max_rrr: 12
 
 value:
-  wicket_cost_cap_runs: 25    # cap on the run-equivalent cost of one dismissal
+  # How the win-probability cost of a wicket becomes runs:
+  #   local  = divide by what one run is worth IN THE SAME STATE (a wicket costs about as many
+  #            runs in a tight finish as in a quiet over; pressure does not inflate it)
+  #   global = divide by the average worth of a run over all states (inflates the cost on
+  #            high-leverage balls, because runs are also worth more there)
+  wicket_cost_conversion: local
+  wp_per_run_floor_share: 0.1   # local run value is floored at this share of the global mean
+  wicket_cost_cap_runs: 15    # cap on the run-equivalent cost of one dismissal
   wicket_cost_floor_runs: 0
 
 eligibility:

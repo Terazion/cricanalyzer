@@ -290,11 +290,15 @@ def write_report(ctx: dict, cfg: dict) -> str:
     a("**Bowler value per delivery** = expected bowler-charged runs(state) - bowler-charged runs "
       "+ (bowler-credited wicket - P(bowler wicket | state)) x wicket cost. Byes, leg-byes and penalties are not charged; "
       "run-outs are not credited.\n")
-    a(f"**Wicket cost in runs** = [WP(after a dot) - WP(after a wicket)] / (average WP per run), capped at "
-      f"{cfg['value']['wicket_cost_cap_runs']} runs. Average WP per run = {val['wp_per_run']:.5f}; mean wicket cost "
-      f"{val['mean_wicket_cost']:.2f} runs over all balls and {val['mean_wicket_cost_pressure']:.2f} runs on pressure balls "
-      f"({100 * val['share_cost_capped']:.1f}% of balls hit the cap). Expected dismissals are credited back so an average "
-      "player scores zero in every state.\n")
+    conv = ("the win-probability value of one run **in the same state**" if val["conversion"] == "local"
+            else "the average win-probability value of one run over all states")
+    a(f"**Wicket cost in runs** = [WP(after a dot) - WP(after a wicket)] / ({conv}), capped at "
+      f"{cfg['value']['wicket_cost_cap_runs']} runs. Mean wicket cost {val['mean_wicket_cost']:.2f} runs over all balls and "
+      f"{val['mean_wicket_cost_pressure']:.2f} runs on pressure balls ({100 * val['share_cost_capped']:.1f}% of balls hit the cap). "
+      "Expected dismissals are credited back so an average player scores zero in every state.\n")
+    a("Value diagnostics (is the baseline centred within each segment, and how much of the per-ball noise is the wicket term?):\n")
+    a(md_table(val["diagnostics"].set_index("segment").T.reset_index(names="quantity"), nd=4))
+    a("")
     a("**Cross-check: win probability added (WPA).** The actual change in win probability across each delivery is "
       "credited to the batter (or dismissed player) and debited to the bowler. Rank correlation between shrunk pressure value "
       f"and pressure WPA per 100 balls among eligible players: batters {rel['bat']['wpa_spearman']:.2f}, "

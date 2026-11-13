@@ -98,6 +98,9 @@ def main(argv=None):
     val = value.compute_values(dfl, cfg)
     print(f"WP per run: {val['wp_per_run']:.5f}; mean wicket cost {val['mean_wicket_cost']:.2f} runs "
           f"(pressure balls {val['mean_wicket_cost_pressure']:.2f}; capped on {100 * val['share_cost_capped']:.1f}% of balls)")
+    print(f"wicket cost conversion: {val['conversion']}; cost quantiles (runs): {val['cost_quantiles']}")
+    print(val["diagnostics"].set_index("segment").T.round(4).to_string())
+    val["diagnostics"].to_csv(os.path.join(td, "value_diagnostics.csv"), index=False)
     print(f"batter records: {len(val['bat']):,} ({val['bat']['player_id'].nunique()} batters), mean value/ball "
           f"{val['bat']['value'].sum() / val['bat']['balls'].sum():+.4f}")
     print(f"bowler records: {len(val['bowl']):,} ({val['bowl']['player_id'].nunique()} bowlers), mean value/ball "
@@ -127,7 +130,8 @@ def main(argv=None):
         sh = R["split_half"]["table"].set_index("component")
         print(f"{name}: split-half r = {sh.loc['rating', 'pearson_r']:.3f} (n={int(sh.loc['rating', 'players'])}); "
               f"value-vs-WPA Spearman {R['wpa_spearman']:.2f}")
-        print(R["sensitivity"][["variant", "eligible_players", "top10_overlap_with_base"]].to_string(index=False))
+        print(R["split_half"]["table"].round(3).to_string(index=False))
+        print(R["sensitivity"][["variant", "eligible_players", "top10_overlap_with_base", "spearman_vs_base"]].round(2).to_string(index=False))
         R["split_half"]["table"].to_csv(os.path.join(td, f"split_half_{name}.csv"), index=False)
         R["sensitivity"].to_csv(os.path.join(td, f"sensitivity_{name}.csv"), index=False)
         R["season"].to_csv(os.path.join(td, f"season_stability_{name}.csv"), index=False)

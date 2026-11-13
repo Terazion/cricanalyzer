@@ -18,7 +18,12 @@ def compute_values(df: pd.DataFrame, cfg: dict) -> dict:
     # runs <-> win probability exchange rate: average WP gained per run across all scored states
     wp_per_run = float(((d["wp_if_six"] - d["wp_if_dot"]) / 6.0).mean())
     wp_per_run = max(wp_per_run, 1e-4)
-    d["wicket_cost_runs"] = np.clip(d["wicket_wp_cost"] / wp_per_run, v["wicket_cost_floor_runs"], v["wicket_cost_cap_runs"])
+    if v.get("wicket_cost_conversion", "local") == "local":
+        local = ((d["wp_if_six"] - d["wp_if_dot"]) / 6.0).clip(lower=wp_per_run * v.get("wp_per_run_floor_share", 0.1))
+        raw_cost = d["wicket_wp_cost"] / local
+    else:
+        raw_cost = d["wicket_wp_cost"] / wp_per_run
+    d["wicket_cost_runs"] = np.clip(raw_cost, v["wicket_cost_floor_runs"], v["wicket_cost_cap_runs"])
 
     # WPA: change in batting-side WP across the delivery
     g = d.groupby(["match_id", "innings"], sort=False)
@@ -69,7 +74,31 @@ def compute_values(df: pd.DataFrame, cfg: dict) -> dict:
     bowl["boundaries"] = ((d["runs"] == 4) | (d["runs"] == 6)).astype(int).to_numpy()
     bowl["player_id"] = bowl["player_id"].astype("int64")
 
-    return {"df": d, "bat": bat, "bowl": bowl, "wp_per_run": wp_per_run,
+    # diagnostics: is the baseline centred inside each segment, and what drives the noise?
+    diag = []
+    run_part = faced * (d["runs"] - d["xr_bat"]).to_numpy()
+    wkt_part = d["bat_value"].to_numpy() - run_part
+    brun_part = (d["xr_bowl"] - d["bowler_runs"]).to_numpy()
+    bwkt_part = d["bowl_value"].to_numpy() - brun_part
+    for seg, m in [("pressure", d["pressure"].to_numpy()), ("non-pressure", ~d["pressure"].to_numpy())]:
+        diag.append({
+            "segment": seg, "deliveries": int(m.sum()),
+            "bat_mean_value_per_ball": d["bat_value"].to_numpy()[m].sum() / max(faced[m].sum(), 1),
+            "bat_sd_runs_part": run_part[m].std(), "bat_sd_wicket_part": wkt_part[m].std(),
+            "bat_wicket_share_of_variance": wkt_part[m].var() / max(d["bat_value"].to_numpy()[m].var(), 1e-12),
+            "bowl_mean_value_per_ball": d["bowl_value"].to_numpy()[m].mean(),
+            "bowl_sd_runs_part": brun_part[m].std(), "bowl_sd_wicket_part": bwkt_part[m].std(),
+            "bowl_wicket_share_of_variance": bwkt_part[m].var() / max(d["bowl_value"].to_numpy()[m].var(), 1e-12),
+            "mean_wicket_cost_runs": d["wicket_cost_runs"].to_numpy()[m].mean(),
+            "actual_dismissal_rate": d["is_wicket"].to_numpy()[m].mean(),
+            "expected_dismissal_rate": d["p_dismissal"].to_numpy()[m].mean(),
+            "actual_bat_runs_per_ball": d["runs"].to_numpy()[m].sum() / max(faced[m].sum(), 1),
+            "expected_bat_runs_per_ball": (faced * d["xr_bat"].to_numpy())[m].sum() / max(faced[m].sum(), 1)})
+    diag = pd.DataFrame(diag)
+    cost_q = d["wicket_cost_runs"].quantile([0.05, 0.25, 0.5, 0.75, 0.95]).round(2).to_dict()
+
+    return {"df": d, "bat": bat, "bowl": bowl, "wp_per_run": wp_per_run, "diagnostics": diag, "cost_quantiles": cost_q,
+            "conversion": v.get("wicket_cost_conversion", "local"),
             "mean_wicket_cost": float(d["wicket_cost_runs"].mean()),
             "mean_wicket_cost_pressure": float(d.loc[d["pressure"], "wicket_cost_runs"].mean()),
             "share_cost_capped": float((d["wicket_cost_runs"] >= v["wicket_cost_cap_runs"]).mean())}
