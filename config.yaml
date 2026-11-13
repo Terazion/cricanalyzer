@@ -1,0 +1,88 @@
+# cricanalyzer configuration. Every threshold and weight used by the pipeline lives here.
+seed: 42
+
+paths:
+  data_dir: data
+  output_dir: outputs
+
+competition:
+  exclude_other_from_ratings: true   # OTHER = A-team tournaments (comp_id 2670, 3289)
+  rated_types: [IPL, T20I]
+
+innings:
+  default_balls: 120
+  powerplay_end_over: 6
+  middle_end_over: 15
+
+rules:
+  wide_types: [wide]
+  noball_types: [overstep, other]
+  bowler_wicket_types: [caught, bowled, lbw, stump, hit wicket]
+
+models:
+  test_fraction: 0.2          # share of MATCHES held out for model comparison
+  n_folds: 5                  # cross-fitting folds (by match) for downstream predictions
+  gb:
+    max_iter: 200
+    learning_rate: 0.06
+    max_depth: 5
+    min_samples_leaf: 200
+    l2_regularization: 1.0
+  gb_wp:
+    max_iter: 300
+    learning_rate: 0.05
+    max_depth: 5
+    min_samples_leaf: 300
+    l2_regularization: 1.0
+  lookup:
+    prior_strength: 150       # pseudo-balls pulling each cell toward its parent cell
+    balls_bin: 6
+    wickets_cap: 7
+    rrr_edges: [6, 8, 10, 12, 15]
+  calibration_bins: 10
+
+pressure:
+  top_share: 0.25             # pressure ball = top 25% of leverage
+  knockout_multiplier: 1.15
+  rule_based:
+    chase_min_rrr: 10
+    chase_max_balls_left: 36
+    powerplay_min_wickets: 3
+    death_reach_min_rrr: 6    # death overs, chase "within reach": rrr between these bounds
+    death_reach_max_rrr: 12
+
+value:
+  wicket_cost_cap_runs: 25    # cap on the run-equivalent cost of one dismissal
+  wicket_cost_floor_runs: 0
+
+eligibility:
+  batter_min_pressure_balls: 150
+  bowler_min_pressure_balls: 120
+  min_pressure_matches: 15
+  split_scale: 0.4            # IPL-only / T20I-only tables use thresholds scaled by this
+
+rating:
+  weights:
+    pressure: 0.5
+    lift: 0.25
+    consistency: 0.25
+  eb_min_balls_for_variance: 30
+  consistency_min_balls: 3    # a match counts toward consistency with >= this many pressure balls
+  consistency_prior_matches: 10
+  opposition:
+    enabled: true
+    weight: 1.0
+    prior_balls: 600          # shrinkage of a team-season strength toward 0
+    iterations: 25
+
+reliability:
+  bootstrap_resamples: 1000
+  bootstrap_top_n: 20
+  sensitivity_thresholds: [0.15, 0.20, 0.30]
+  scale_eligibility_with_threshold: true
+  alternative_weights:
+    pressure_only: [1.0, 0.0, 0.0]
+    equal: [0.34, 0.33, 0.33]
+    pressure_heavy: [0.7, 0.15, 0.15]
+    lift_heavy: [0.4, 0.4, 0.2]
+    consistency_heavy: [0.4, 0.2, 0.4]
