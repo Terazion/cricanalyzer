@@ -95,6 +95,17 @@ def test_state_rules(tiny):
     assert d.loc[d.innings == 2, "state_valid"].eq(False).all() and d.loc[d.innings == 1, "state_valid"].all()
 
 
+def test_super_over_margin_is_not_a_regulation_margin(tiny):
+    cfg, data, df = tiny
+    m = data["matches"].copy()
+    m.loc[m.match_id == 1, "result"] = "X Won Super Over By 10 Runs"
+    with pytest.raises(state.StateCheckError, match="regulation totals differ"):
+        state.run_state_checks(df, m, cfg)          # tiny match 1 is 24 vs 3, so not level
+    lvl = df[~((df.match_id == 1) & (df.innings == 1) & (df.innings_ball_num != 1))].copy()
+    lvl.loc[(lvl.match_id == 1) & (lvl.innings == 1), "team_runs"] = 3
+    state.run_state_checks(lvl, m, cfg)             # level totals pass despite "By 10 Runs"
+
+
 def test_margin_check_catches_bad_totals(tiny):
     cfg, data, df = tiny
     m = data["matches"].copy()

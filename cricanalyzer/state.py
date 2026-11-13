@@ -89,6 +89,12 @@ def run_state_checks(df: pd.DataFrame, matches: pd.DataFrame, cfg: dict) -> dict
         if margin is None or r.is_dls or revised or r.match_id not in tot.index:
             continue
         t1, t2 = tot.loc[r.match_id].get(1, np.nan), tot.loc[r.match_id].get(2, np.nan)
+        if r.has_super_over or r.result_says_tie:
+            # "Won Super Over By N Runs": the margin is the super over's; regulation must be level
+            checked += 1
+            if t1 != t2:
+                mism.append((r.match_id, f"super-over match but regulation totals differ ({t1} vs {t2})"))
+            continue
         if np.isnan(t1) or np.isnan(t2):
             mism.append((r.match_id, "missing innings"))
             continue
