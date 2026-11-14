@@ -426,6 +426,9 @@ def write_report(ctx: dict, cfg: dict) -> str:
         "ignores fielding (dropped catches, run-out assists) and treats all byes/leg-byes as nobody's fault.",
         "**Wicket cost uses one global runs-per-win-probability exchange rate** and a cap; in dead game states the cost goes to "
         "zero, which is correct for win probability but understates what a wicket is worth in runs.",
+        f"**Super overs are excluded** ({meta['raw_rows'] - meta['rows_regulation']} deliveries). They are high-pressure, but a "
+        "6-ball, 2-wicket innings cannot be valued by models fitted on 20-over innings and there are too few to model separately. "
+        "The regulation innings of those matches are included and count as ties.",
         "**DLS matches without revised targets** are dropped from second-innings scoring; rain-shortened first innings without "
         "revised-over fields are treated as full length.",
         "**Selection effects.** Captains choose who bowls and who bats in pressure moments; the method measures performance "
