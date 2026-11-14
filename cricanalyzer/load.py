@@ -74,7 +74,7 @@ def load_data(cfg: dict) -> dict:
     # ---------------- ball by ball
     has_super_over = bbb.loc[bbb["innings"] > 2, "match_id"].unique()
     matches["has_super_over"] = matches["match_id"].isin(has_super_over)
-    bbb = bbb[bbb["innings"].isin([1, 2])].copy()
+    bbb = bbb.copy()   # derived columns are computed for all innings; super overs are split off below
     for c in ["runs", "extras1_runs", "extras_2_runs"]:
         bbb[c] = _num(bbb[c]).fillna(0).astype(int)
     bbb["is_wicket"] = _to_bool(bbb["is_wicket"])
@@ -95,6 +95,8 @@ def load_data(cfg: dict) -> dict:
     fb = bbb["is_wicket"] & bbb["out_player_id"].isna()
     bbb.loc[fb, "out_player_id"] = bbb.loc[fb, "striker_id"]
     bbb = bbb.sort_values(["match_id", "innings", "innings_ball_num"], kind="mergesort").reset_index(drop=True)
+    super_overs = bbb[bbb["innings"] > 2].reset_index(drop=True)
+    bbb = bbb[bbb["innings"].isin([1, 2])].reset_index(drop=True)
 
     # matches without ball data (abandoned) are ignored
     n_matches_file = len(matches)
@@ -120,7 +122,7 @@ def load_data(cfg: dict) -> dict:
             team_names.setdefault(tid, nm)
 
     return {
-        "bbb": bbb, "matches": matches, "names": names, "team_names": team_names,
+        "bbb": bbb, "super_overs": super_overs, "matches": matches, "names": names, "team_names": team_names,
         "meta": {"raw_rows": n_raw_rows, "raw_matches": n_raw_matches,
                  "matches_file_rows": n_matches_file,
                  "matches_without_ball_data": n_matches_file - len(matches),

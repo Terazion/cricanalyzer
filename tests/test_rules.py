@@ -113,3 +113,13 @@ def test_margin_check_catches_bad_totals(tiny):
     m.loc[m.match_id == 1, ["has_super_over", "result_says_tie"]] = False
     with pytest.raises(state.StateCheckError):
         state.run_state_checks(df, m, cfg)
+
+
+def test_super_over_states(tiny):
+    cfg, data, df = tiny
+    so = state.build_super_over_states(data["super_overs"], data["matches"], cfg)
+    assert len(so) == 2 and set(so["so_innings"]) == {3, 4}
+    first, chase = so[so.so_innings == 3].iloc[0], so[so.so_innings == 4].iloc[0]
+    assert first["innings"] == 1 and first["balls_remaining"] == 6 and np.isnan(first["rrr"])
+    assert chase["innings"] == 2 and chase["target"] == 7 and chase["rrr"] == 7.0   # 6 scored, needs 7 off 6
+    assert not (df["innings"] > 2).any()                                         # regulation frame untouched

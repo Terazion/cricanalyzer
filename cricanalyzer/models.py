@@ -330,12 +330,13 @@ def fit_all(df: pd.DataFrame, cfg: dict) -> dict:
     for c in ["xr_bat", "xr_bowl", "p_dismissal", "p_bowler_wicket"]:
         out[c] = np.nan
     po = np.full((len(df), 6), np.nan)
-    wp_models = {}
+    wp_models, fold_models = {}, {}
     valid = df["state_valid"].to_numpy()
     for k in range(cfg["models"]["n_folds"]):
         tr, te = fold != k, (fold == k) & valid
         for name, (kind, mask, y) in targets.items():
             m = Baseline(kind, chosen[name], cfg).fit(df[tr & mask], y[tr & mask])
+            fold_models[(k, name)] = m
             pred = m.predict(df[te])
             if name == "outcome":
                 po[te] = pred
@@ -345,5 +346,20 @@ def fit_all(df: pd.DataFrame, cfg: dict) -> dict:
     for j, lab in enumerate(OUTCOME_LABELS):
         out[f"po_{lab}"] = po[:, j]
     return {"df": out, "comparison": comparison, "wp_metrics": wp_metrics, "wp_method": wp_method,
-            "calibration": calib, "wp_models": wp_models, "chosen": chosen,
+            "calibration": calib, "wp_models": wp_models, "chosen": chosen, "folds": folds, "fold_models": fold_models,
             "n_train_matches": len(train_ids), "n_test_matches": len(test_ids)}
+
+
+def predict_baselines(mod: dict, sdf: pd.DataFrame) -> pd.DataFrame:
+    """Cross-fitted baseline predictions for rows outside the training frame (super overs):
+    each match is scored by the fold models that did not train on its regulation innings."""
+    out = sdf.copy()
+    names = ["xr_bat", "xr_bowl", "p_dismissal", "p_bowler_wicket"]
+    for c in names:
+        out[c] = np.nan
+    fold = out["match_id"].map(mod["folds"]).fillna(0).astype(int).to_numpy()
+    for k in np.unique(fold):
+        m = fold == k
+        for c in names:
+            out.loc[m, c] = mod["fold_models"][(k, c)].predict(out[m])
+    return out

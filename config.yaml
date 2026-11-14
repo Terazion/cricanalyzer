@@ -63,6 +63,10 @@ value:
   wicket_cost_cap_runs: 15    # cap on the run-equivalent cost of one dismissal
   wicket_cost_floor_runs: 0
 
+super_over:
+  include_in_ratings: true    # count every super-over delivery (IPL/T20I) as a pressure ball
+  balls: 6
+
 eligibility:
   batter_min_pressure_balls: 150
   bowler_min_pressure_balls: 120

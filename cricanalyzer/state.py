@@ -64,6 +64,35 @@ def build_states(bbb: pd.DataFrame, matches: pd.DataFrame, cfg: dict) -> pd.Data
     return df
 
 
+def build_super_over_states(so: pd.DataFrame, matches: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """State before each super-over delivery, expressed as the closest regulation situation:
+    the final over of an innings with wickets in hand. Odd innings (3, 5, ...) set a total,
+    even innings (4, 6, ...) chase the preceding super-over total + 1.
+    """
+    df = so.copy()
+    n = cfg.get("super_over", {}).get("balls", 6)
+    g = df.groupby(["match_id", "innings"], sort=False)
+    df["score_before"] = g["team_runs"].cumsum() - df["team_runs"]
+    df["legal_before"] = g["is_legal"].cumsum() - df["is_legal"].astype(int)
+    df["wickets_before"] = g["is_wicket"].cumsum() - df["is_wicket"].astype(int)
+    df["balls_remaining"] = np.maximum(n - df["legal_before"], 1)
+    tot = df.groupby(["match_id", "innings"])["team_runs"].sum()
+    chase = df["innings"] % 2 == 0
+    prev = pd.MultiIndex.from_arrays([df["match_id"], df["innings"] - 1])
+    target = tot.reindex(prev).to_numpy() + 1
+    df["so_innings"] = df["innings"]
+    df["target"] = np.where(chase, target, np.nan)
+    df["runs_needed"] = df["target"] - df["score_before"]
+    df["rrr"] = np.where(chase & ~np.isnan(target), df["runs_needed"] * 6 / df["balls_remaining"], np.nan)
+    df["innings"] = np.where(chase & ~np.isnan(target), 2, 1)   # model innings
+    m = matches.set_index("match_id")
+    df = df.join(m[["comp_type", "season_year", "knock_out", "match_dt"]], on="match_id")
+    df["season"] = df["season_year"].fillna(m["season_year"].median()).astype(int)
+    df["comp_code"] = df["comp_type"].map(COMP_CODE).astype(int)
+    df["state_valid"] = True
+    return df
+
+
 def run_state_checks(df: pd.DataFrame, matches: pd.DataFrame, cfg: dict) -> dict:
     """Raises StateCheckError listing every failed check."""
     fails = []

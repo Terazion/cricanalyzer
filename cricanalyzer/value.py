@@ -11,38 +11,11 @@ def _flag_cols(df):
     return [c for c in df.columns if c == "pressure_rule" or c == "pressure" or c.startswith("pressure_")]
 
 
-def compute_values(df: pd.DataFrame, cfg: dict) -> dict:
-    d = df[df["scored"]].copy()
-    v = cfg["value"]
-
-    # runs <-> win probability exchange rate: average WP gained per run across all scored states
-    wp_per_run = float(((d["wp_if_six"] - d["wp_if_dot"]) / 6.0).mean())
-    wp_per_run = max(wp_per_run, 1e-4)
-    if v.get("wicket_cost_conversion", "local") == "run_expectancy":
-        raw_cost = pd.Series(_run_expectancy_cost(df, d, cfg), index=d.index)
-    elif v.get("wicket_cost_conversion", "local") == "local":
-        local = ((d["wp_if_six"] - d["wp_if_dot"]) / 6.0).clip(lower=wp_per_run * v.get("wp_per_run_floor_share", 0.1))
-        raw_cost = d["wicket_wp_cost"] / local
-    else:
-        raw_cost = d["wicket_wp_cost"] / wp_per_run
-    d["wicket_cost_runs"] = np.clip(raw_cost, v["wicket_cost_floor_runs"], v["wicket_cost_cap_runs"])
-
-    # WPA: change in batting-side WP across the delivery
-    g = d.groupby(["match_id", "innings"], sort=False)
-    nxt = g["wp_before"].shift(-1)
-    first_inn2 = d[d["innings"] == 2].groupby("match_id")["wp_before"].first()
-    end1 = 1 - d["match_id"].map(first_inn2)
-    end = np.where(d["innings"] == 1, end1.fillna(d["bat_win"]), d["bat_win"])
-    d["wpa"] = (nxt.fillna(pd.Series(end, index=d.index)) - d["wp_before"]).fillna(0.0)
-
+def _records(d: pd.DataFrame):
+    """Batter and bowler records from a valued delivery frame."""
     faced = d["faced"].to_numpy().astype(float)
-    cost = d["wicket_cost_runs"].to_numpy()
     striker_out = (d["out_player_id"] == d["striker_id"]).to_numpy()
     other_out = d["out_player_id"].notna().to_numpy() & ~striker_out
-    d["bat_value"] = (faced * (d["runs"] - d["xr_bat"]) + d["p_dismissal"] * cost - striker_out * cost)
-    d["bowl_value"] = (d["xr_bowl"] - d["bowler_runs"]
-                       + (d["bowler_wicket"].astype(float) - d["p_bowler_wicket"]) * cost)
-
     flags = _flag_cols(d)
     common = ["match_id", "season", "comp_type", "match_dt", "innings"] + flags
     bat = d[common].copy()
@@ -76,6 +49,66 @@ def compute_values(df: pd.DataFrame, cfg: dict) -> dict:
     bowl["boundaries"] = ((d["runs"] == 4) | (d["runs"] == 6)).astype(int).to_numpy()
     bowl["player_id"] = bowl["player_id"].astype("int64")
 
+    return bat, bowl
+
+
+def _value_super_overs(so: pd.DataFrame, d: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Super-over deliveries: always pressure balls. Benchmark = the final over of an innings with
+    wickets in hand (baseline predictions already attached); wicket cost = median cost on
+    regulation pressure balls. No win probability is modelled, so WPA is zero."""
+    s = so.copy()
+    cost = float(d.loc[d["pressure"], "wicket_cost_runs"].median())
+    s["wicket_cost_runs"] = cost
+    faced = s["faced"].to_numpy().astype(float)
+    striker_out = (s["out_player_id"] == s["striker_id"]).to_numpy()
+    s["bat_value"] = faced * (s["runs"] - s["xr_bat"]) + s["p_dismissal"] * cost - striker_out * cost
+    s["bowl_value"] = s["xr_bowl"] - s["bowler_runs"] + (s["bowler_wicket"].astype(float) - s["p_bowler_wicket"]) * cost
+    s["wpa"] = 0.0
+    for c in _flag_cols(d):
+        s[c] = True
+    return s
+
+
+def compute_values(df: pd.DataFrame, cfg: dict, so: pd.DataFrame | None = None) -> dict:
+    d = df[df["scored"]].copy()
+    v = cfg["value"]
+
+    # runs <-> win probability exchange rate: average WP gained per run across all scored states
+    wp_per_run = float(((d["wp_if_six"] - d["wp_if_dot"]) / 6.0).mean())
+    wp_per_run = max(wp_per_run, 1e-4)
+    if v.get("wicket_cost_conversion", "local") == "run_expectancy":
+        raw_cost = pd.Series(_run_expectancy_cost(df, d, cfg), index=d.index)
+    elif v.get("wicket_cost_conversion", "local") == "local":
+        local = ((d["wp_if_six"] - d["wp_if_dot"]) / 6.0).clip(lower=wp_per_run * v.get("wp_per_run_floor_share", 0.1))
+        raw_cost = d["wicket_wp_cost"] / local
+    else:
+        raw_cost = d["wicket_wp_cost"] / wp_per_run
+    d["wicket_cost_runs"] = np.clip(raw_cost, v["wicket_cost_floor_runs"], v["wicket_cost_cap_runs"])
+
+    # WPA: change in batting-side WP across the delivery
+    g = d.groupby(["match_id", "innings"], sort=False)
+    nxt = g["wp_before"].shift(-1)
+    first_inn2 = d[d["innings"] == 2].groupby("match_id")["wp_before"].first()
+    end1 = 1 - d["match_id"].map(first_inn2)
+    end = np.where(d["innings"] == 1, end1.fillna(d["bat_win"]), d["bat_win"])
+    d["wpa"] = (nxt.fillna(pd.Series(end, index=d.index)) - d["wp_before"]).fillna(0.0)
+
+    faced = d["faced"].to_numpy().astype(float)
+    cost = d["wicket_cost_runs"].to_numpy()
+    striker_out = (d["out_player_id"] == d["striker_id"]).to_numpy()
+    other_out = d["out_player_id"].notna().to_numpy() & ~striker_out
+    d["bat_value"] = (faced * (d["runs"] - d["xr_bat"]) + d["p_dismissal"] * cost - striker_out * cost)
+    d["bowl_value"] = (d["xr_bowl"] - d["bowler_runs"]
+                       + (d["bowler_wicket"].astype(float) - d["p_bowler_wicket"]) * cost)
+
+    bat, bowl = _records(d)
+    n_so = 0
+    if so is not None and len(so) and cfg.get("super_over", {}).get("include_in_ratings", False):
+        sv = _value_super_overs(so, d, cfg)
+        n_so = len(sv)
+        sb, sw = _records(sv)
+        bat, bowl = pd.concat([bat, sb], ignore_index=True), pd.concat([bowl, sw], ignore_index=True)
+
     # diagnostics: is the baseline centred inside each segment, and what drives the noise?
     diag = []
     run_part = faced * (d["runs"] - d["xr_bat"]).to_numpy()
@@ -100,7 +133,7 @@ def compute_values(df: pd.DataFrame, cfg: dict) -> dict:
     cost_q = d["wicket_cost_runs"].quantile([0.05, 0.25, 0.5, 0.75, 0.95]).round(2).to_dict()
 
     return {"df": d, "bat": bat, "bowl": bowl, "wp_per_run": wp_per_run, "diagnostics": diag, "cost_quantiles": cost_q,
-            "conversion": v.get("wicket_cost_conversion", "local"),
+            "conversion": v.get("wicket_cost_conversion", "local"), "super_over_deliveries": n_so,
             "mean_wicket_cost": float(d["wicket_cost_runs"].mean()),
             "mean_wicket_cost_pressure": float(d.loc[d["pressure"], "wicket_cost_runs"].mean()),
             "share_cost_capped": float((d["wicket_cost_runs"] >= v["wicket_cost_cap_runs"]).mean())}

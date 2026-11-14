@@ -212,7 +212,8 @@ def write_report(ctx: dict, cfg: dict) -> str:
       f"Player ratings use {len(df):,} deliveries from {df['match_id'].nunique()} "
       f"{' and '.join(cfg['competition']['rated_types'])} matches.")
     a(f"- A **pressure ball** is a delivery in the top {share}% of *leverage*: the expected absolute swing in win "
-      f"probability from that one ball. Knock-out matches get a x{P['knockout_multiplier']} multiplier.")
+      f"probability from that one ball. Knock-out matches get a x{P['knockout_multiplier']} multiplier."
+      + (f" All {val['super_over_deliveries']} super-over deliveries are also counted as pressure balls." if val.get("super_over_deliveries", 0) else ""))
     a("- Players are valued in **runs relative to what an average player does in the same match state**, "
       "adjusted for opposition strength and shrunk toward the population mean for small samples.")
     a(f"- Rating = {W['pressure']} x pressure value + {W['lift']} x lift over own non-pressure baseline + "
@@ -403,6 +404,12 @@ def write_report(ctx: dict, cfg: dict) -> str:
       "`used` produced the rankings in this report. The criterion is repeatability, never who ends up in the top 10.\n")
     a(md_table(ctx["method_comparison"], nd=3))
     a("")
+    if ctx.get("super_over_effect") is not None:
+        a("### Super overs\n")
+        a(f"Super-over deliveries are {'included as pressure balls' if val.get('super_over_deliveries', 0) else 'excluded'} "
+          "in the rankings above. Compared with the other setting:\n")
+        a(md_table(ctx["super_over_effect"], nd=3))
+        a("")
     a("### Limitations\n")
     lim = [
         "**With the own-baseline prior, the pressure value is largely a player's overall value.** The data show little "
@@ -426,9 +433,14 @@ def write_report(ctx: dict, cfg: dict) -> str:
         "ignores fielding (dropped catches, run-out assists) and treats all byes/leg-byes as nobody's fault.",
         "**Wicket cost uses one global runs-per-win-probability exchange rate** and a cap; in dead game states the cost goes to "
         "zero, which is correct for win probability but understates what a wicket is worth in runs.",
-        f"**Super overs are excluded** ({meta['raw_rows'] - meta['rows_regulation']} deliveries). They are high-pressure, but a "
-        "6-ball, 2-wicket innings cannot be valued by models fitted on 20-over innings and there are too few to model separately. "
-        "The regulation innings of those matches are included and count as ties.",
+        (f"**Super overs are valued crudely.** All {ctx.get('n_super_over', 0)} super-over deliveries in rated competitions count as "
+         "pressure balls. A 6-ball, 2-wicket innings cannot be scored by the win-probability model, so each ball is benchmarked "
+         "against the final over of a regulation innings with wickets in hand, and a wicket is charged at the median pressure-ball "
+         "wicket cost. They carry no leverage value and no WPA. The table above shows the ranking with and without them."
+         if val.get("super_over_deliveries", 0) else
+         f"**Super overs are excluded** ({meta['raw_rows'] - meta['rows_regulation']} deliveries). They are high-pressure, but a "
+         "6-ball, 2-wicket innings cannot be valued by models fitted on 20-over innings and there are too few to model separately. "
+         "The regulation innings of those matches are included and count as ties."),
         "**DLS matches without revised targets** are dropped from second-innings scoring; rain-shortened first innings without "
         "revised-over fields are treated as full length.",
         "**Selection effects.** Captains choose who bowls and who bats in pressure moments; the method measures performance "

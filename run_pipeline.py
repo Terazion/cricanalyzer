@@ -95,7 +95,14 @@ def main(argv=None):
 
     # ------------------------------------------------------------ Phase 4
     banner("PHASE 4 - PLAYER VALUE")
-    val = value.compute_values(dfl, cfg)
+    so = None
+    if len(data["super_overs"]):
+        so = state.build_super_over_states(data["super_overs"], data["matches"], cfg)
+        so = models.predict_baselines(mod, so[so["comp_type"].isin(rated_types)])
+    val = value.compute_values(dfl, cfg, so)
+    n_so_all = 0 if so is None else len(so)
+    print(f"super-over deliveries in rated competitions: {n_so_all} in {0 if so is None else so['match_id'].nunique()} matches; "
+          f"added as pressure balls: {val['super_over_deliveries']}")
     print(f"WP per run: {val['wp_per_run']:.5f}; mean wicket cost {val['mean_wicket_cost']:.2f} runs "
           f"(pressure balls {val['mean_wicket_cost_pressure']:.2f}; capped on {100 * val['share_cost_capped']:.1f}% of balls)")
     print(f"pressure prior: {cfg['rating'].get('pressure_prior', 'population')}")
@@ -138,7 +145,12 @@ def main(argv=None):
         R["season"].to_csv(os.path.join(td, f"season_stability_{name}.csv"), index=False)
         R["boot_top"].to_csv(os.path.join(td, f"bootstrap_top20_{name}.csv"), index=False)
 
-    mc = validate.method_comparison(dfl, data, cfg, rt)
+    soe = validate.super_over_effect(dfl, data, cfg, rt, so) if so is not None and len(so) else None
+    if soe is not None:
+        soe.to_csv(os.path.join(td, "super_over_effect.csv"), index=False)
+        print("\nranking vs the other super-over setting (include_in_ratings flipped):")
+        print(soe.round(3).to_string(index=False))
+    mc = validate.method_comparison(dfl, data, cfg, rt, so)
     mc.to_csv(os.path.join(td, "method_comparison.csv"), index=False)
     print("\nmethod comparison (split-half r; higher = more repeatable):")
     print(mc.round(3).to_string(index=False))
@@ -146,7 +158,7 @@ def main(argv=None):
     # ------------------------------------------------------------ Phase 7
     banner("PHASE 7 - REPORT")
     ctx = {"meta": m, "models": mod, "evidence": ev, "thresholds": thresholds, "val": val, "ratings": rt,
-           "rel": rel, "method_comparison": mc, "team_names": data["team_names"]}
+           "rel": rel, "method_comparison": mc, "super_over_effect": soe, "n_super_over": n_so_all, "team_names": data["team_names"]}
     path = report.write_report(ctx, cfg)
     print(f"report: {path}; charts: {len(os.listdir(os.path.join(od, 'charts')))} PNG files")
     for role, name in [("bat", "BATTERS"), ("bowl", "BOWLERS")]:

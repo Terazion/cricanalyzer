@@ -136,7 +136,7 @@ def run_all(ratings: dict, cfg: dict) -> dict:
     return out
 
 
-def method_comparison(dfl: pd.DataFrame, data: dict, cfg: dict, base: dict) -> pd.DataFrame:
+def method_comparison(dfl: pd.DataFrame, data: dict, cfg: dict, base: dict, so=None) -> pd.DataFrame:
     """Split-half reliability under each wicket-cost conversion and each pressure prior.
 
     The criterion is repeatability (odd vs even matches), never who ends up in the top 10.
@@ -146,7 +146,7 @@ def method_comparison(dfl: pd.DataFrame, data: dict, cfg: dict, base: dict) -> p
     for conv in ["local", "global", "run_expectancy"]:
         c = copy.deepcopy(cfg)
         c["value"]["wicket_cost_conversion"] = conv
-        val = compute_values(dfl, c)
+        val = compute_values(dfl, c, so)
         for prior in ["population", "own_baseline"]:
             c["rating"]["pressure_prior"] = prior
             rt = build_ratings({"bat": val["bat"].copy(), "bowl": val["bowl"].copy()}, data, c)
@@ -160,4 +160,22 @@ def method_comparison(dfl: pd.DataFrame, data: dict, cfg: dict, base: dict) -> p
                 row[f"{name}_top10_overlap_with_used"] = len(set(t[t["eligible"]].head(10)["player_id"])
                                                              & set(b[b["eligible"]].head(10)["player_id"]))
             rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def super_over_effect(dfl, data, cfg, base, so) -> pd.DataFrame:
+    """Ranking with vs without super-over deliveries (the other setting of super_over.include_in_ratings)."""
+    c = copy.deepcopy(cfg)
+    c.setdefault("super_over", {})["include_in_ratings"] = not cfg.get("super_over", {}).get("include_in_ratings", False)
+    val = compute_values(dfl, c, so)
+    rt = build_ratings({"bat": val["bat"].copy(), "bowl": val["bowl"].copy()}, data, c)
+    rows = []
+    for role, name in [("bat", "batters"), ("bowl", "bowlers")]:
+        t, b = rt[role]["table"], base[role]["table"]
+        te, be = t[t["eligible"]].set_index("player_id"), b[b["eligible"]].set_index("player_id")
+        j = be["rating"].to_frame("used").join(te["rating"].rename("other"), how="inner")
+        rows.append({"role": name, "eligible_used": len(be), "eligible_other_setting": len(te),
+                     "top10_shared": len(set(be.index[:10]) & set(te.index[:10])),
+                     "spearman_all_eligible": j["used"].corr(j["other"], method="spearman"),
+                     "max_rank_change_in_top10": float((te["rank"].reindex(be.index[:10]) - be["rank"].iloc[:10]).abs().max())})
     return pd.DataFrame(rows)
