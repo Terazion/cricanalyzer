@@ -54,6 +54,60 @@ def md_table(df: pd.DataFrame, nd=3, rename=None) -> str:
     return "\n".join([head, sep] + body)
 
 
+def md_to_html(md: str, base_dir: str, title: str) -> str:
+    """Minimal markdown -> one self-contained HTML file (images embedded) for upload or print-to-PDF."""
+    import base64
+    import html
+    import re
+
+    def inline(t):
+        t = html.escape(t, quote=False)
+        t = re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+        t = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", t)
+        return re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<em>\1</em>", t)
+
+    out, lines, i = [], md.split("\n"), 0
+    while i < len(lines):
+        ln = lines[i]
+        m = re.match(r"!\[(.*?)\]\((.*?)\)", ln.strip())
+        if m:
+            with open(os.path.join(base_dir, m.group(2)), "rb") as fh:
+                b64 = base64.b64encode(fh.read()).decode()
+            out.append(f'<figure><img alt="{html.escape(m.group(1))}" src="data:image/png;base64,{b64}"></figure>')
+        elif ln.startswith("#"):
+            n = len(ln) - len(ln.lstrip("#"))
+            out.append(f"<h{n}>{inline(ln[n:].strip())}</h{n}>")
+        elif ln.startswith("|"):
+            rows = []
+            while i < len(lines) and lines[i].startswith("|"):
+                rows.append([c.strip() for c in lines[i].strip().strip("|").split("|")])
+                i += 1
+            i -= 1
+            body = "".join("<tr>" + "".join(f"<td>{inline(c)}</td>" for c in r) + "</tr>" for r in rows[2:])
+            head = "".join(f"<th>{inline(c)}</th>" for c in rows[0])
+            out.append(f'<div class="tw"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
+        elif ln.startswith("- "):
+            items = []
+            while i < len(lines) and lines[i].startswith("- "):
+                items.append(f"<li>{inline(lines[i][2:])}</li>")
+                i += 1
+            i -= 1
+            out.append("<ul>" + "".join(items) + "</ul>")
+        elif ln.strip():
+            out.append(f"<p>{inline(ln)}</p>")
+        i += 1
+    css = ("body{font:15px/1.55 system-ui,Segoe UI,Arial,sans-serif;color:#0b0b0b;background:#fff;max-width:980px;"
+           "margin:32px auto;padding:0 20px}h1{font-size:26px}h2{font-size:21px;margin-top:36px;border-bottom:1px solid #e4e3df;"
+           "padding-bottom:4px}h3{font-size:17px;margin-top:26px}table{border-collapse:collapse;font-size:12px;margin:10px 0}"
+           "th,td{border:1px solid #e4e3df;padding:3px 7px;text-align:right;white-space:nowrap}th{background:#f4f3f0}"
+           "td:nth-child(-n+4),th:nth-child(-n+4){text-align:left}.tw{overflow-x:auto}img{max-width:100%}"
+           "figure{margin:14px 0}code{background:#f4f3f0;padding:1px 4px;border-radius:3px;font-size:13px}"
+           "@media print{body{margin:0;max-width:none;font-size:11px}table{font-size:8px}h2{break-after:avoid}"
+           "figure,tr{break-inside:avoid}.tw{overflow:visible}th,td{white-space:normal}}")
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{html.escape(title)}</title>'
+            f"<style>{css}</style></head><body>" + "\n".join(out) + "</body></html>")
+
+
 # ----------------------------------------------------------------- charts
 def make_charts(ctx: dict, cfg: dict) -> dict:
     cdir = os.path.join(cfg["paths"]["output_dir"], "charts")
@@ -136,8 +190,8 @@ def make_charts(ctx: dict, cfg: dict) -> dict:
         ax.axvline(0, color=MUTED, lw=1)
         ax.grid(axis="y", visible=False)
         ax.set(xlabel="z-score within eligible pool", title=f"Rating components, top 10 {name}")
-        ax.title.set_position((0, 1.12)); ax.set_title(f"Rating components, top 10 {name}", pad=30)
-        ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.07), ncol=3, fontsize=8)
+        ax.set_title(f"Rating components, top 10 {name}", pad=34)
+        ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, fontsize=8)
         ch[f"components_{role}"] = _save(fig, cdir, f"rating_components_{name}.png")
 
         if "rank_boot_low" in el:
@@ -208,14 +262,17 @@ def write_report(ctx: dict, cfg: dict) -> str:
       "computed from the supplied data with the settings in `config.yaml` (seed %d).*\n" % cfg["seed"])
     a("## Summary\n")
     a(f"- Data: {meta['rows_regulation']:,} regulation deliveries in {meta['matches']} matches "
-      f"({meta['matches_without_ball_data']} matches without ball data ignored; super overs excluded). "
+      f"({meta['matches_without_ball_data']} matches without ball data ignored; super overs handled separately). "
       f"Player ratings use {len(df):,} deliveries from {df['match_id'].nunique()} "
       f"{' and '.join(cfg['competition']['rated_types'])} matches.")
     a(f"- A **pressure ball** is a delivery in the top {share}% of *leverage*: the expected absolute swing in win "
       f"probability from that one ball. Knock-out matches get a x{P['knockout_multiplier']} multiplier."
       + (f" All {val['super_over_deliveries']} super-over deliveries are also counted as pressure balls." if val.get("super_over_deliveries", 0) else ""))
     a("- Players are valued in **runs relative to what an average player does in the same match state**, "
-      "adjusted for opposition strength and shrunk toward the population mean for small samples.")
+      "adjusted for opposition strength and shrunk for small samples.")
+    a("- The brief asks how players perform under pressure **compared with their usual level** and who delivers **most consistently**: "
+      "the rating's three parts are pressure performance, lift over the player's own non-pressure baseline, and the share of "
+      "pressure matches with a positive contribution.")
     a(f"- Rating = {W['pressure']} x pressure value + {W['lift']} x lift over own non-pressure baseline + "
       f"{W['consistency']} x consistency, each as a z-score among eligible players.")
     a(f"- Eligible: {rt['bat']['n_eligible']} batters (of {rt['bat']['n_players']}) and "
@@ -455,6 +512,8 @@ def write_report(ctx: dict, cfg: dict) -> str:
       "Outputs: `top10_batters.csv`, `top10_bowlers.csv`, `batters_ranked_full.csv`, `bowlers_ranked_full.csv` (eligible players, all components, "
       "sample sizes, intervals), `*_all_players.csv` (including non-eligible), and supporting tables in `outputs/tables/`.")
     path = os.path.join(od, "methodology_report.md")
-    with open(path, "w") as fh:
+    with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(L) + "\n")
+    with open(os.path.join(od, "methodology_report.html"), "w", encoding="utf-8") as fh:
+        fh.write(md_to_html("\n".join(L), od, "Reliability under pressure - methodology report"))
     return path

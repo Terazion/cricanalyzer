@@ -160,6 +160,7 @@ def main(argv=None):
     ctx = {"meta": m, "models": mod, "evidence": ev, "thresholds": thresholds, "val": val, "ratings": rt,
            "rel": rel, "method_comparison": mc, "super_over_effect": soe, "n_super_over": n_so_all, "team_names": data["team_names"]}
     path = report.write_report(ctx, cfg)
+    print(f"report for upload: {path[:-3]}.html (open in a browser, Print > Save as PDF)")
     print(f"report: {path}; charts: {len(os.listdir(os.path.join(od, 'charts')))} PNG files")
     for role, name in [("bat", "BATTERS"), ("bowl", "BOWLERS")]:
         t = rt[role]["table"]

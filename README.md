@@ -20,6 +20,7 @@ Every threshold and weight is in `config.yaml`.
 | `top10_batters.csv`, `top10_bowlers.csv` | ranked 1-10 |
 | `batters_ranked_full.csv`, `bowlers_ranked_full.csv` | all eligible players: every component, sample sizes, EB and bootstrap intervals, IPL-only / T20I-only ratings |
 | `*_all_players.csv` | same columns including non-eligible players |
+| `methodology_report.html` | the report as one self-contained file for upload (open in a browser, Print > Save as PDF) |
 | `methodology_report.md` | pressure definition, performance measurement, fair comparisons, evidence, reliability and limitations |
 | `charts/*.png` | charts used by the report |
 | `tables/*.csv` | model comparison, calibration, pressure evidence, sensitivity, split-half, bootstrap, season stability, team strengths |
